@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cast Your Vote</title>
+<style>
+:root { --paper:#eef1f6; --ink:#1b2233; --muted:#5d6679; --line:#d3d9e4; --radius:10px; }
+* { box-sizing:border-box; }
+body { margin:0; background:var(--paper); color:var(--ink); font-family:"Segoe UI",system-ui,sans-serif; line-height:1.5; }
+.vote-bar { background:var(--ink); color:#fff; padding:20px 24px 16px; }
+.vote-bar h1 { margin:0 0 12px; font-size:1.5rem; }
+.buttons { display:flex; flex-wrap:wrap; gap:10px; }
+.vote-btn { border:0; border-radius:var(--radius); padding:14px 26px; font:inherit; font-weight:700; cursor:pointer; min-width:120px; }
+.vote-btn:disabled { opacity:.45; cursor:not-allowed; }
+.vote-btn.picked, .vote-btn.picked:disabled { opacity:1; cursor:default; outline:4px solid #fff; }
+.vote-btn:not(:disabled):active { transform:translateY(1px); }
+:focus-visible { outline:3px solid #8fb8ff; outline-offset:2px; }
+#message { margin:12px 0 0; min-height:1.4em; color:#c9d2e6; }
+#message.error { color:#ffb4a8; }
+main { max-width:760px; margin:0 auto; padding:28px 20px 48px; }
+.label { margin:0; color:var(--muted); }
+#winner { margin:4px 0 6px; font-size:clamp(2rem,7vw,3.4rem); line-height:1.05; }
+#majority-text { margin:0 0 18px; color:var(--muted); }
+.bar-row { margin:12px 0; }
+.bar-top { display:flex; justify-content:space-between; font-weight:600; }
+.track { height:22px; background:var(--line); border-radius:999px; overflow:hidden; margin-top:4px; }
+.fill { height:100%; width:0; transition:width .4s ease; }
+.total { margin:16px 0 0; color:var(--muted); }
+.link-btn { background:none; border:0; color:var(--muted); font:inherit; text-decoration:underline; cursor:pointer; margin-top:24px; padding:0; }
+@media (prefers-reduced-motion:reduce) { .fill { transition:none; } }
+</style>
+</head>
+<body>
+<header class="vote-bar">
+  <h1>Cast your vote</h1>
+  <div id="buttons" class="buttons"></div>
+  <p id="message" role="status">One vote per browser. A vote cannot be changed.</p>
+</header>
+<main>
+  <p class="label">Live result</p>
+  <h2 id="winner"></h2>
+  <p id="majority-text"></p>
+  <div id="bars"></div>
+  <p class="total">Total votes: <b id="total">0</b></p>
+  <button id="reset" class="link-btn">Reset all votes (admin)</button>
+</main>
+<script>
+const PARTIES = [
+  { name: "Congress", color: "#1e88e5", text: "#fff" },
+  { name: "BJP",      color: "#f57c00", text: "#fff" },
+  { name: "BRS",      color: "#d81b7a", text: "#fff" },
+  { name: "TDP",      color: "#f9c80e", text: "#1b2233" },
+  { name: "NOTA",     color: "#5d6679", text: "#fff" },
+];
+const msg = document.getElementById("message");
+const buttons = document.getElementById("buttons");
+const bars = document.getElementById("bars");
+
+function setMsg(t, err) { msg.textContent = t; msg.className = err ? "error" : ""; }
+
+async function api(path, body) {
+  const res = await fetch(path, body ? {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body)
+  } : undefined);
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Request failed");
+  return data;
+}
+
+PARTIES.forEach(p => {
+  const b = document.createElement("button");
+  b.className = "vote-btn";
+  b.textContent = p.name;
+  b.dataset.name = p.name;
+  b.style.background = p.color;
+  b.style.color = p.text;
+  b.addEventListener("click", () => castVote(p.name));
+  buttons.append(b);
+
+  const row = document.createElement("div");
+  row.className = "bar-row";
+  row.dataset.name = p.name;
+  row.innerHTML = '<div class="bar-top"><span></span><span></span></div><div class="track"><div class="fill"></div></div>';
+  row.querySelector(".fill").style.background = p.color;
+  bars.append(row);
+});
+
+function render(d) {
+  const winner = document.getElementById("winner");
+  const text = document.getElementById("majority-text");
+  if (!d.total) {
+    winner.textContent = "No votes yet";
+    text.textContent = "Be the first to vote.";
+  } else if (d.leaders.length > 1) {
+    winner.textContent = "Tie: " + d.leaders.join(" & ");
+    text.textContent = d.parties.find(p => p.name === d.leaders[0]).votes + " votes each. No majority.";
+  } else {
+    const top = d.parties.find(p => p.name === d.leaders[0]);
+    winner.textContent = d.majority ? top.name + " wins" : top.name + " leads";
+    text.textContent = d.majority
+      ? `Majority: ${top.votes} of ${d.total} votes (${top.percent}%). ${d.needed} were needed.`
+      : `${top.votes} of ${d.total} votes (${top.percent}%). No majority yet, ${d.needed} needed.`;
+  }
+  d.parties.forEach(p => {
+    const row = bars.querySelector(`[data-name="${p.name}"]`);
+    const s = row.querySelectorAll(".bar-top span");
+    s[0].textContent = p.name;
+    s[1].textContent = `${p.votes} votes (${p.percent}%)`;
+    row.querySelector(".fill").style.width = p.percent + "%";
+  });
+  document.getElementById("total").textContent = d.total;
+
+  buttons.querySelectorAll("button").forEach(b => {
+    b.disabled = Boolean(d.myVote);
+    b.classList.toggle("picked", b.dataset.name === d.myVote);
+  });
+  if (d.myVote) setMsg(`You voted for ${d.myVote}. Thank you!`);
+  else if (msg.textContent.startsWith("You voted")) setMsg("One vote per browser. A vote cannot be changed.");
+}
+
+async function refresh() {
+  try { render(await api("/api/results")); }
+  catch (e) { setMsg("Can't reach the server. Is it running?", true); }
+}
+
+async function castVote(party) {
+  try { render(await api("/api/vote", { party })); }
+  catch (e) { setMsg(e.message, true); }
+}
+
+document.getElementById("reset").addEventListener("click", async () => {
+  const key = prompt("Admin key to clear all votes:");
+  if (!key) return;
+  try { render(await api("/api/reset", { key })); setMsg("All votes cleared."); }
+  catch (e) { setMsg(e.message, true); }
+});
+
+refresh();
+setInterval(refresh, 3000);
+</script>
+</body>
+</html>

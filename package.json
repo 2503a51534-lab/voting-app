@@ -1,0 +1,7 @@
+{
+  "name": "party-voting-app",
+  "version": "1.0.0",
+  "description": "Voting app: Congress, BJP, BRS, TDP, NOTA (no dependencies)",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" }
+}
