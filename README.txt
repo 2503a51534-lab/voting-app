@@ -13,3 +13,6 @@ npm start
 5. Open http://localhost:3000 in your browser.
 
 No npm install is required.
+## Live Demo
+
+[Open Voting App](http://3.92.160.105:3000)
